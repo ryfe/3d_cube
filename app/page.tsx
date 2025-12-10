@@ -1,65 +1,97 @@
-import Image from "next/image";
+"use client";
+
+import { Canvas, useFrame } from "@react-three/fiber";
+import { OrbitControls } from "@react-three/drei";
+import { useRef } from "react";
+import * as THREE from "three";
+
+type Vec3 = [number, number, number];
+
+// 3×3×3 위치 생성
+const spacing = 1.05;
+const cubePositions: Vec3[] = [];
+const offsets = [-1, 0, 1];
+
+for (const x of offsets) {
+  for (const y of offsets) {
+    for (const z of offsets) {
+      cubePositions.push([x * spacing, y * spacing, z * spacing]);
+    }
+  }
+}
+
+// 색 결정
+function getCubeColor([x, y, z]: Vec3): string {
+  if (x > 0.5) return "#ff5555"; 
+  if (x < -0.5) return "#ff9933"; 
+  if (y > 0.5) return "#ffffff"; 
+  if (y < -0.5) return "#ffff55"; 
+  if (z > 0.5) return "#5555ff"; 
+  if (z < -0.5) return "#55ff55"; 
+  return "#222222";
+}
+
+function SmallCube({ position }: { position: Vec3 }) {
+  const [x, y, z] = position;
+
+  const materials = [
+    // +X (right)
+    new THREE.MeshStandardMaterial({ color: x > 0.5 ? "#ff5555" : "#222222" }),
+    // -X (left)
+    new THREE.MeshStandardMaterial({ color: x < -0.5 ? "#ff9933" : "#222222" }),
+    // +Y (top)
+    new THREE.MeshStandardMaterial({ color: y > 0.5 ? "#ffffff" : "#222222" }),
+    // -Y (bottom)
+    new THREE.MeshStandardMaterial({ color: y < -0.5 ? "#ffff55" : "#222222" }),
+    // +Z (front)
+    new THREE.MeshStandardMaterial({ color: z > 0.5 ? "#5555ff" : "#222222" }),
+    // -Z (back)
+    new THREE.MeshStandardMaterial({ color: z < -0.5 ? "#55ff55" : "#222222" }),
+  ];
+
+  return (
+    <mesh position={position} material={materials}>
+      <boxGeometry args={[1, 1, 1]} />
+    </mesh>
+  );
+}
+
+function RubiksLikeCube() {
+  const groupRef = useRef<THREE.Group | null>(null);
+
+  useFrame((_, delta) => {
+    if (!groupRef.current) return;
+    groupRef.current.rotation.y += delta * 0.6;
+    groupRef.current.rotation.x += delta * 0.3;
+  });
+
+  return (
+    <group ref={groupRef}>
+      {cubePositions.map((pos, idx) => (
+        <SmallCube key={idx} position={pos} />
+      ))}
+    </group>
+  );
+}
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+      <section className="w-full max-w-3xl flex flex-col items-center gap-4 px-4">
+        <h1 className="text-3xl font-bold text-center">3×3×3 Cube Demo</h1>
+        <p className="text-sm text-slate-300 text-center">
+          27개의 작은 큐브로 이루어진 3×3×3 큐브입니다. 자동 회전하며, 드래그와 줌 조작이 가능합니다.
+        </p>
+        <div className="w-full h-[450px] border border-slate-700 rounded-xl overflow-hidden bg-black">
+          <Canvas camera={{ position: [6, 6, 6], fov: 55 }}>
+            <ambientLight intensity={0.4} />
+            <directionalLight position={[8, 10, 5]} intensity={1.2} castShadow />
+            <directionalLight position={[-6, -8, -5]} intensity={0.5} />
+            <RubiksLikeCube />
+            <OrbitControls enablePan={false} />
+          </Canvas>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </section>
+    </main>
   );
 }
