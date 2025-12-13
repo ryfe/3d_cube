@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import * as THREE from "three";
 
 // 인덱스 좌표 타입 (-1, 0, 1)
@@ -96,15 +96,30 @@ function applyUTurn(cubes: CubeCell[]): CubeCell[] {
 
 type SmallCubeProps = {
   cell: CubeCell;
-  position: Vec3; // 이미 계산된 위치
+  position: [number, number, number];
 };
 
 function SmallCube({ cell, position }: SmallCubeProps) {
-  const faceColors = cell.faces ?? getInitialFaceColors(cell.index);
-
-  const materials = faceColors.map(
-    (color) => new THREE.MeshStandardMaterial({ color })
+  // 6면 material을 한 번만 생성 (컴포넌트 마운트 시)
+  const materials = useMemo(
+    () => [
+      new THREE.MeshStandardMaterial(),
+      new THREE.MeshStandardMaterial(),
+      new THREE.MeshStandardMaterial(),
+      new THREE.MeshStandardMaterial(),
+      new THREE.MeshStandardMaterial(),
+      new THREE.MeshStandardMaterial(),
+    ],
+    []
   );
+
+  // faces가 바뀔 때만 색상 업데이트
+  useEffect(() => {
+    for (let i = 0; i < 6; i++) {
+
+      materials[i].color.set(cell.faces[i]);
+    }
+  }, [cell.faces, materials]);
 
   return (
     <mesh position={position} material={materials}>
@@ -114,80 +129,88 @@ function SmallCube({ cell, position }: SmallCubeProps) {
 }
 
 function RubiksLikeCube() {
-  const [cubes, setCubes] = useState<CubeCell[]>(initialCubes);
+  const [cubes, setCubes] = useState(initialCubes);
 
-  const topGroupRef = useRef<THREE.Group | null>(null); // 윗면(Top layer) 그룹
-
+  const topGroupRef = useRef<THREE.Group>(null);
   const isRotatingRef = useRef(false);
-  const targetAngleRef = useRef(0); // 목표 회전 각도 (rad)
-  const currentAngleRef = useRef(0); // 현재 회전 상태 (rad)
+  const targetAngleRef = useRef(0);
+  const currentAngleRef = useRef(0);
+  const needsResetRef = useRef(false); // state 반영 후에만 그룹 회전 리셋
 
-  // 윗면 회전 애니메이션
   useFrame((_, delta) => {
-    if (!topGroupRef.current || !isRotatingRef.current) return;
+    if (!isRotatingRef.current) return;
+    if (!topGroupRef.current) return;
 
-    const speed = Math.PI; // rad/s (90도 회전 ~0.5초 정도)
+    const speed = Math.PI/4; // rad/s
     const remaining = targetAngleRef.current - currentAngleRef.current;
     const step = Math.sign(remaining) * speed * delta;
 
     if (Math.abs(step) >= Math.abs(remaining)) {
-      // 회전 끝
+      // 회전 종료: 딱 목표 각도로 스냅
       currentAngleRef.current = targetAngleRef.current;
       topGroupRef.current.rotation.y = currentAngleRef.current;
-      isRotatingRef.current = false;
 
-      // 회전 결과를 논리 좌표와 면 색에 반영 (윗면 y === 1 인 셀만)
+      // 논리 상태에 즉시 반영
       setCubes((prev) => applyUTurn(prev));
 
-      // 그룹 회전값 리셋 (좌표에 반영했으니 0으로 돌려놓음)
-      topGroupRef.current.rotation.y = 0;
-      currentAngleRef.current = 0;
-      targetAngleRef.current = 0;
+      // 애니메이션 종료 (리셋은 state 반영 후에)
+      isRotatingRef.current = false;
+      needsResetRef.current = true;
     } else {
       currentAngleRef.current += step;
       topGroupRef.current.rotation.y = currentAngleRef.current;
     }
   });
 
-  // 스페이스바로 윗면 회전 트리거
+  // Space로 U 회전 시작
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        if (!isRotatingRef.current) {
-          isRotatingRef.current = true;
-          targetAngleRef.current = currentAngleRef.current + Math.PI / 2; // 90도 회전
-        }
-      }
+      if (e.code !== "Space") return;
+      if (isRotatingRef.current) return;
+
+      isRotatingRef.current = true;
+      targetAngleRef.current = Math.PI / 2;
+      currentAngleRef.current = 0;
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // 윗면(y === 1)과 나머지 셀 분리
-  const topLayer = cubes.filter((cell) => cell.index[1] === 1);
-  const others = cubes.filter((cell) => cell.index[1] !== 1);
+  useEffect(() => {
+    if (!needsResetRef.current) return;
+    if (!topGroupRef.current) return;
+
+    // state(cubes)가 실제로 반영된 뒤에만 시각적 회전값을 리셋
+    topGroupRef.current.rotation.y = 0;
+    currentAngleRef.current = 0;
+    targetAngleRef.current = 0;
+    needsResetRef.current = false;
+  }, [cubes]);
 
   return (
-    <group>
-      {/* 윗면 레이어 (그룹 기준 y = spacing, 내부는 y = 0) */}
-      <group ref={topGroupRef} position={[0, spacing, 0]}>
-        {topLayer.map((cell) => {
-          const [x, , z] = cell.index;
-          const localPos: Vec3 = [x * spacing, 0, z * spacing];
-          return <SmallCube key={cell.id} cell={cell} position={localPos} />;
-        })}
+    <>
+      {cubes
+        .filter((c) => c.index[1] !== 1)
+        .map((c) => (
+          <SmallCube
+            key={c.id}
+            cell={c}
+            position={[c.index[0] * spacing, c.index[1] * spacing, c.index[2] * spacing]}
+          />
+        ))}
+      <group ref={topGroupRef}>
+        {cubes
+          .filter((c) => c.index[1] === 1)
+          .map((c) => (
+            <SmallCube
+              key={c.id}
+              cell={c}
+              position={[c.index[0] * spacing, c.index[1] * spacing, c.index[2] * spacing]}
+            />
+          ))}
       </group>
-
-      {/* 나머지 셀들 */}
-      {others.map((cell) => {
-        const [x, y, z] = cell.index;
-        const pos: Vec3 = [x * spacing, y * spacing, z * spacing];
-        return <SmallCube key={cell.id} cell={cell} position={pos} />;
-      })}
-    </group>
+    </>
   );
 }
 
